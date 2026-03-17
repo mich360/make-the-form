@@ -12,7 +12,6 @@ if (!is_dir(FILE_DIR)) {
 $page_flag = 0;
 $clean = array();
 $error = array();
-$send_result = false;
 
 $data = array(
     'your_name' => '',
@@ -27,6 +26,14 @@ $data = array(
 // 初回アクセス時にCSRFトークン生成
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// PRG用の完了メッセージ
+if (!empty($_SESSION['flash_message'])) {
+    $flash_message = $_SESSION['flash_message'];
+    unset($_SESSION['flash_message']);
+} else {
+    $flash_message = '';
 }
 
 function h($str) {
@@ -182,6 +189,19 @@ function build_multipart_mail_body($text, $attachment_name = '') {
     return $body;
 }
 
+function delete_uploaded_file($attachment_name) {
+    if (empty($attachment_name)) {
+        return;
+    }
+
+    $basename = basename($attachment_name);
+    $path = FILE_DIR . $basename;
+
+    if (is_file($path)) {
+        unlink($path);
+    }
+}
+
 // POST取り込み
 if (!empty($_POST)) {
     foreach ($data as $key => $value) {
@@ -234,8 +254,6 @@ if (!empty($_POST['btn_confirm'])) {
         }
 
         if (empty($error)) {
-            $page_flag = 2;
-
             $mail_name = $data['your_name'];
             $mail_email = clean_mail_header_value($data['email']);
             $mail_gender = gender_label($data['gender']);
@@ -271,10 +289,19 @@ if (!empty($_POST['btn_confirm'])) {
             $admin_body = build_multipart_mail_body($admin_reply_text, $mail_file);
             $admin_mail_sent = mb_send_mail('webmaster@gray-code.com', $admin_reply_subject, $admin_body, $header);
 
-            $send_result = ($user_mail_sent && $admin_mail_sent);
+            if ($user_mail_sent && $admin_mail_sent) {
+                delete_uploaded_file($mail_file);
+                $_SESSION['flash_message'] = '送信が完了しました。';
+            } else {
+                $_SESSION['flash_message'] = '送信に失敗しました。時間をおいて再度お試しください。';
+            }
 
             // 送信後はトークン再生成
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+            // PRG
+            header('Location: ' . $_SERVER['PHP_SELF'] . '?done=1');
+            exit;
         }
     }
 
@@ -286,6 +313,11 @@ if (!empty($_POST['btn_confirm'])) {
     } else {
         $page_flag = 0;
     }
+}
+
+// GETでdone=1が来たら完了画面
+if (isset($_GET['done']) && $_GET['done'] === '1') {
+    $page_flag = 2;
 }
 ?>
 <!DOCTYPE html>
@@ -439,11 +471,7 @@ textarea[name=contact] {
 
 <?php elseif ($page_flag === 2): ?>
 
-    <?php if ($send_result): ?>
-        <p class="message">送信が完了しました。</p>
-    <?php else: ?>
-        <p class="message">送信に失敗しました。時間をおいて再度お試しください。</p>
-    <?php endif; ?>
+<p class="message"><?php echo h($flash_message ?: '送信が完了しました。'); ?></p>
 
 <?php else: ?>
 
